@@ -32,7 +32,7 @@ cover/
 .venv
 venv
 env/
-fermigates
+
 
 # Sphinx documentation
 docs/_build/
