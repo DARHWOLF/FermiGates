@@ -35,7 +35,7 @@ class BaseFermiModel(nn.Module):
         """
         for name, module in self.named_modules():
             if isinstance(module, FermiGatedLinear):
-                module.initialize_mu_from_weight_percentile(percentile, per_layer=per_layer_neuron)
+                module.initialize_mu_from_weight_percentile(percentile)
 
     def compute_sparsity(self, threshold: float = 0.5) -> Tuple[int, int, float]:
         """
