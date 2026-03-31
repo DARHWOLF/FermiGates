@@ -1,47 +1,57 @@
-import torch 
-import torch.nn as nn
-import torch.nn.functional as F
+from __future__ import annotations
+
 from typing import Optional
 
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+
 class LinearCalibration(nn.Module):
+    """Linear correction module: ``y = X @ W + b``.
+
+    ``W`` is stored with shape ``(d_in, d_out)``.
     """
-    Linear calibration module: output = X @ W + b
-    By default registers W and b as buffers (frozen). Pass learnable=True to make them Parameters.
-    W shape: (d_in, d_out)
-    b shape: (d_out,)
-    """
-    def __init__(self, d_in: int, d_out: int, learnable: bool = False, device=None, dtype=None):
+
+    def __init__(
+        self,
+        d_in: int,
+        d_out: int,
+        learnable: bool = False,
+        device=None,
+        dtype=None,
+    ) -> None:
         super().__init__()
-        W = torch.zeros(d_in, d_out, device=device, dtype=dtype)
-        b = torch.zeros(d_out, device=device, dtype=dtype)
+        W = torch.zeros(d_in, d_out, device=device, dtype=dtype or torch.float32)
+        b = torch.zeros(d_out, device=device, dtype=dtype or torch.float32)
+
         if learnable:
             self.W = nn.Parameter(W)
             self.b = nn.Parameter(b)
         else:
-            self.register_buffer('W', W)
-            self.register_buffer('b', b)
+            self.register_buffer("W", W)
+            self.register_buffer("b", b)
 
-    def load_calibration(self, W_hat: torch.Tensor, b_hat: Optional[torch.Tensor] = None, to_param: bool = False):
-        """
-        Load computed calibration parameters (W_hat (d_in,d_out), optional b_hat (d_out,)).
-        If to_param True, convert them into nn.Parameter (trainable).
-        """
-        W_hat = W_hat.detach().clone()
+    def load_calibration(
+        self,
+        W_hat: torch.Tensor,
+        b_hat: Optional[torch.Tensor] = None,
+        to_param: bool = False,
+    ) -> None:
+        W_hat = W_hat.detach().to(dtype=self.W.dtype, device=self.W.device)
         if b_hat is None:
-            b_hat = torch.zeros(W_hat.shape[1], device=W_hat.device, dtype=W_hat.dtype)
-        b_hat = b_hat.detach().clone()
-
-        # ensure shapes
-        if hasattr(self, 'W') and isinstance(self.W, torch.Tensor):
-            # replace buffer
-            self.W = W_hat.to(self.W.device)
+            b_hat = torch.zeros(W_hat.shape[1], dtype=self.b.dtype, device=self.b.device)
         else:
-            self.W.data.copy_(W_hat.to(self.W.device))
+            b_hat = b_hat.detach().to(dtype=self.b.dtype, device=self.b.device)
 
-        if hasattr(self, 'b') and isinstance(self.b, torch.Tensor):
-            self.b = b_hat.to(self.b.device)
-        else:
-            self.b.data.copy_(b_hat.to(self.b.device))
+        if W_hat.shape != self.W.shape:
+            raise ValueError(f"Expected W_hat shape {tuple(self.W.shape)}, got {tuple(W_hat.shape)}")
+        if b_hat.shape != self.b.shape:
+            raise ValueError(f"Expected b_hat shape {tuple(self.b.shape)}, got {tuple(b_hat.shape)}")
+
+        with torch.no_grad():
+            self.W.copy_(W_hat)
+            self.b.copy_(b_hat)
 
         if to_param:
             if not isinstance(self.W, nn.Parameter):
@@ -50,6 +60,4 @@ class LinearCalibration(nn.Module):
                 self.b = nn.Parameter(self.b)
 
     def forward(self, X: torch.Tensor) -> torch.Tensor:
-        # X: (batch, d_in); returns (batch, d_out)
-        # Use F.linear which expects weight shape (out_features, in_features)
         return F.linear(X, self.W.t(), self.b)

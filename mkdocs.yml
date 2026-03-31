@@ -1,0 +1,9 @@
+site_name: FermiGates
+repo_url: https://github.com/DARHWOLF/FermiGates
+nav:
+  - Home: README.md
+  - Architecture: docs/architecture.md
+  - API: docs/api.md
+  - Development: docs/development.md
+theme:
+  name: material

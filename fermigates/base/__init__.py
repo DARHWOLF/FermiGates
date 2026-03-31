@@ -1,5 +1,15 @@
-from .base import BaseFermiModel
+from .base import (
+    BaseFermiBackbone,
+    BaseFermiClassifier,
+    BaseFermiLayer,
+    BaseFermiModel,
+    SparsitySummary,
+)
 
 __all__ = [
-    "BaseFermiModel"
+    "SparsitySummary",
+    "BaseFermiLayer",
+    "BaseFermiModel",
+    "BaseFermiBackbone",
+    "BaseFermiClassifier",
 ]

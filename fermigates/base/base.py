@@ -1,83 +1,128 @@
-import torch 
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Callable, Optional, Tuple
+
+import torch
 import torch.nn as nn
 
-from fermigates.masks.fermimask import FermiMask
-from fermigates.layers.calibration.linear_calibration import LinearCalibration
-from fermigates.layers.linear_layers.fermilayer import FermiGatedLinear 
-from typing import Tuple, Callable, Optional
+from fermigates.gates import BaseGate
+
+if TYPE_CHECKING:
+    from fermigates.export.pruning import ModelPruningReport
+    from fermigates.layers.calibration.linear_calibration import LinearCalibration
+    from fermigates.metrics.tracking import ModelOccupancyMetrics
+
+
+@dataclass(frozen=True)
+class SparsitySummary:
+    kept: int
+    total: int
+    fraction_kept: float
+
+
+class BaseFermiLayer(nn.Module, ABC):
+    """Abstract base class for any layer exposing differentiable gate probabilities."""
+
+    @abstractmethod
+    def gate_probabilities(self) -> torch.Tensor:
+        """Return soft gate values associated with this layer."""
+
+    def count_nonzero(self, threshold: float = 0.5) -> tuple[int, int]:
+        probs = self.gate_probabilities()
+        total = probs.numel()
+        kept = int((probs >= threshold).sum().item())
+        return kept, total
+
 
 class BaseFermiModel(nn.Module):
-    """
-    Abstract base class for models that use Fermi-gating and need linear calibration utilities.
-    Subclasses should:
-      - define layers (e.g. self.fc1 = FermiGatedLinear(...))
-      - implement forward(...) (can use apply_calibration when needed)
-    This class provides helper functions for temperature control, mu init, sparsity calculation,
-    and linear calibration attachment.
-    """
-    def __init__(self):
+    """Unified base model for gating, sparsity accounting, and calibration utilities."""
+
+    def __init__(self) -> None:
         super().__init__()
-        # store calibration modules by name
         self.calibrations = nn.ModuleDict()
 
-    def set_temperature(self, T_new: float):
-        """
-        Set temperature T across all FermiMask instances in this model.
-        """
-        for m in self.modules():
-            if isinstance(m, FermiMask):
-                m.set_temperature(T_new)
+    def iter_gates(self):
+        for module in self.modules():
+            if isinstance(module, BaseGate):
+                yield module
 
-    def init_mu_from_weights(self, percentile: float = 0.5, per_layer_neuron: bool = False):
-        """
-        Initialize μ for all FermiGatedLinear layers in the model by using the percentile of |weights|.
-        percentile: 0..1. per_layer_neuron: compute per-output-neuron value if True.
-        """
-        for name, module in self.named_modules():
-            if isinstance(module, FermiGatedLinear):
-                module.initialize_mu_from_weight_percentile(percentile)
+    def set_temperature(self, T_new: float) -> None:
+        for gate in self.iter_gates():
+            gate.set_temperature(T_new)
 
-    def compute_sparsity(self, threshold: float = 0.5) -> Tuple[int, int, float]:
+    def init_mu_from_weights(self, percentile: float = 0.5, per_layer_neuron: bool = False) -> None:
+        """Initialize ``mu`` for all compatible layers.
+
+        Any module that implements ``initialize_mu_from_weight_percentile`` is supported.
         """
-        Compute sparsity across all FermiGatedLinear layers.
-        Returns: (kept, total, fraction_kept)
-        """
+
+        for module in self.modules():
+            init_fn = getattr(module, "initialize_mu_from_weight_percentile", None)
+            if callable(init_fn):
+                init_fn(percentile=percentile, per_neuron=per_layer_neuron)
+
+    def compute_sparsity_summary(self, threshold: float = 0.5) -> SparsitySummary:
         kept = 0
         total = 0
         with torch.no_grad():
             for module in self.modules():
-                if isinstance(module, FermiGatedLinear):
-                    W = module.linear.weight
-                    P = module.mask(W)
-                    total += P.numel()
-                    kept += (P > threshold).sum().item()
+                if isinstance(module, BaseFermiLayer):
+                    k, t = module.count_nonzero(threshold=threshold)
+                    kept += k
+                    total += t
         frac = float(kept) / float(total) if total > 0 else 0.0
-        return kept, total, frac
+        return SparsitySummary(kept=kept, total=total, fraction_kept=frac)
 
-    # ----- Linear calibration utilities -----
+    def compute_sparsity(self, threshold: float = 0.5) -> Tuple[int, int, float]:
+        summary = self.compute_sparsity_summary(threshold=threshold)
+        return summary.kept, summary.total, summary.fraction_kept
+
+    def collect_gate_metrics(self, threshold: float = 0.5) -> "ModelOccupancyMetrics":
+        from fermigates.metrics import collect_gate_metrics
+
+        return collect_gate_metrics(self, threshold=threshold)
+
+    def hard_masked_state_dict(self, threshold: float = 0.5) -> dict[str, torch.Tensor]:
+        from fermigates.export import hard_masked_state_dict
+
+        return hard_masked_state_dict(self, threshold=threshold)
+
+    def to_hard_masked_model(self, threshold: float = 0.5) -> "BaseFermiModel":
+        from fermigates.export import to_hard_masked_model
+
+        return to_hard_masked_model(self, threshold=threshold)
+
+    def pruning_report(
+        self,
+        threshold: float = 0.5,
+        example_inputs: Optional[torch.Tensor] = None,
+    ) -> "ModelPruningReport":
+        from fermigates.export import pruning_report
+
+        return pruning_report(self, threshold=threshold, example_inputs=example_inputs)
+
     @staticmethod
-    def solve_ridge_cpu(X: torch.Tensor, E: torch.Tensor, lam: float = 1e-3, add_bias: bool = True
-                       ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
-        """
-        Solve ridge regression in closed form on CPU for numerical stability:
-          min_W ||X W - E||_F^2 + lam ||W||_F^2
-        X: (n, d_in), E: (n, d_out)
-        Returns: W_hat (d_in, d_out), b_hat (d_out,) if add_bias else None
-        """
-        # move to cpu & float64 for stability
+    def solve_ridge_cpu(
+        X: torch.Tensor,
+        E: torch.Tensor,
+        lam: float = 1e-3,
+        add_bias: bool = True,
+    ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+        """Closed-form ridge solver on CPU in float64 for numerical stability."""
+
         Xc = X.detach().cpu().to(dtype=torch.float64)
         Ec = E.detach().cpu().to(dtype=torch.float64)
         n, d_in = Xc.shape
-        _, d_out = Ec.shape
 
         if add_bias:
             ones = torch.ones((n, 1), dtype=Xc.dtype, device=Xc.device)
-            X_aug = torch.cat([Xc, ones], dim=1)  # (n, d_in+1)
+            X_aug = torch.cat([Xc, ones], dim=1)
             d_aug = d_in + 1
             XtX = X_aug.T @ X_aug
             XtX += lam * torch.eye(d_aug, dtype=XtX.dtype, device=XtX.device)
             XTE = X_aug.T @ Ec
-            # solve
             try:
                 W_aug = torch.linalg.solve(XtX, XTE)
             except RuntimeError:
@@ -85,97 +130,115 @@ class BaseFermiModel(nn.Module):
             W_hat = W_aug[:d_in, :].to(dtype=X.dtype)
             b_hat = W_aug[d_in, :].to(dtype=X.dtype)
             return W_hat, b_hat
-        else:
-            XtX = Xc.T @ Xc
-            XtX += lam * torch.eye(d_in, dtype=XtX.dtype, device=XtX.device)
-            XTE = Xc.T @ Ec
-            try:
-                W = torch.linalg.solve(XtX, XTE)
-            except RuntimeError:
-                W = torch.pinverse(XtX) @ XTE
-            return W.to(dtype=X.dtype), None
 
-    def calibrate_with_loader(self,
-                              layer_input_fn: Callable[[], torch.Tensor],
-                              original_layer_fn: Callable[[], torch.Tensor],
-                              pruned_layer_fn: Callable[[], torch.Tensor],
-                              calibration_loader: torch.utils.data.DataLoader,
-                              lam: float = 1e-3,
-                              add_bias: bool = True,
-                              name: Optional[str] = None,
-                              device: Optional[torch.device] = None) -> LinearCalibration:
-        """
-        Compute LinearCalibration by collecting (X, E) on calibration_loader then solving ridge.
-        Arguments:
-          - layer_input_fn: function that given batch X returns the flattened input used by the layer (batch, d_in)
-                            (e.g. a wrapper that flattens images or extract activations)
-          - original_layer_fn: function that given same batch returns original dense layer output (batch, d_out)
-          - pruned_layer_fn: function that returns pruned layer output (batch, d_out)
-          - calibration_loader: yields input batches (data, label) or inputs
-          - lam: ridge penalty
-          - add_bias: whether to solve for bias term
-          - name: optional name under which to store the calibration module in self.calibrations
-          - device: device to place resulting calibration (defaults to model device)
-        Returns:
-          - calibration module (registered under self.calibrations[name] if name provided)
-        NOTES:
-          - The three functions (layer_input_fn, original_layer_fn, pruned_layer_fn) must capture the same batch input internally.
-          - Typical pattern: define a closure that uses the batch from the loader and returns X_flat and outputs.
-        """
-        device = device or next(self.parameters()).device
+        XtX = Xc.T @ Xc
+        XtX += lam * torch.eye(d_in, dtype=XtX.dtype, device=XtX.device)
+        XTE = Xc.T @ Ec
+        try:
+            W_hat = torch.linalg.solve(XtX, XTE)
+        except RuntimeError:
+            W_hat = torch.pinverse(XtX) @ XTE
+        return W_hat.to(dtype=X.dtype), None
+
+    def _model_device(self) -> torch.device:
+        try:
+            return next(self.parameters()).device
+        except StopIteration:
+            return torch.device("cpu")
+
+    def calibrate_with_loader(
+        self,
+        layer_input_fn: Callable[[torch.Tensor], torch.Tensor],
+        original_layer_fn: Callable[[torch.Tensor], torch.Tensor],
+        pruned_layer_fn: Callable[[torch.Tensor], torch.Tensor],
+        calibration_loader: torch.utils.data.DataLoader,
+        lam: float = 1e-3,
+        add_bias: bool = True,
+        name: Optional[str] = None,
+        device: Optional[torch.device] = None,
+    ) -> "LinearCalibration":
+        from fermigates.layers.calibration.linear_calibration import LinearCalibration
+
+        device = device or self._model_device()
         X_list = []
         E_list = []
+
         self.eval()
         with torch.no_grad():
             for batch in calibration_loader:
-                # accommodate dataloader returning (inputs, labels) or raw inputs
-                if isinstance(batch, (list, tuple)) and len(batch) >= 1:
-                    inputs = batch[0].to(device)
+                if isinstance(batch, (tuple, list)):
+                    inputs = batch[0]
                 else:
-                    inputs = batch.to(device)
+                    inputs = batch
 
-                # user-provided closures are expected to read 'inputs' and return tensors
-                X_flat = layer_input_fn(inputs)           # (b, d_in)
-                f_orig = original_layer_fn(inputs)        # (b, d_out)
-                f_pruned = pruned_layer_fn(inputs)        # (b, d_out)
+                if not isinstance(inputs, torch.Tensor):
+                    raise TypeError("calibration_loader must yield Tensor inputs or (Tensor, target).")
 
-                # residual E = f_orig - f_pruned
+                inputs = inputs.to(device)
+                X_flat = layer_input_fn(inputs)
+                f_orig = original_layer_fn(inputs)
+                f_pruned = pruned_layer_fn(inputs)
+
                 E = (f_orig - f_pruned).detach().cpu()
                 X_list.append(X_flat.detach().cpu())
                 E_list.append(E)
 
-        if len(X_list) == 0:
+        if not X_list:
             raise ValueError("Calibration loader produced no data.")
 
         X = torch.cat(X_list, dim=0)
         E = torch.cat(E_list, dim=0)
-
         W_hat, b_hat = self.solve_ridge_cpu(X, E, lam=lam, add_bias=add_bias)
-        # create calibration module and load weights
-        d_in = X.shape[1]
-        d_out = E.shape[1]
-        calib = LinearCalibration(d_in, d_out, learnable=False, device=device)
+
+        calib = LinearCalibration(d_in=X.shape[1], d_out=E.shape[1], learnable=False, device=device)
         calib.load_calibration(W_hat.to(device), b_hat.to(device) if b_hat is not None else None)
+
         if name:
             self.calibrations[name] = calib
         return calib
 
-    def attach_calibration(self, name: str, calib: LinearCalibration):
-        """
-        Attach a pre-built calibration module under self.calibrations[name].
-        """
+    def attach_calibration(self, name: str, calib: "LinearCalibration") -> None:
         self.calibrations[name] = calib
 
     def apply_calibration(self, name: str, X_flat: torch.Tensor, y_pruned: torch.Tensor) -> torch.Tensor:
-        """
-        Apply stored calibration to produce corrected output:
-          y_corrected = y_pruned + calib(X_flat)
-        """
         if name not in self.calibrations:
             raise KeyError(f"Calibration '{name}' not found.")
-        calib = self.calibrations[name]
-        return y_pruned + calib(X_flat)
+        return y_pruned + self.calibrations[name](X_flat)
 
-    # Optional: convenience helper to remove all calibrations
-    def clear_calibrations(self):
-        self.calibrations = nn.ModuleDict()
+    def clear_calibrations(self) -> None:
+        self.calibrations.clear()
+
+
+class BaseFermiBackbone(BaseFermiModel, ABC):
+    """Base class for reusable Fermi feature extractors."""
+
+    @abstractmethod
+    def encode(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+        """Produce backbone representations."""
+
+    def forward(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+        return self.encode(x, *args, **kwargs)
+
+
+class BaseFermiClassifier(BaseFermiBackbone, ABC):
+    """Base class for supervised classifiers built on top of Fermi components."""
+
+    def __init__(self, num_classes: int) -> None:
+        super().__init__()
+        if num_classes <= 0:
+            raise ValueError("num_classes must be positive.")
+        self.num_classes = int(num_classes)
+
+    @abstractmethod
+    def logits(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+        """Return class logits."""
+
+    def encode(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+        return self.logits(x, *args, **kwargs)
+
+    def forward(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+        return self.logits(x, *args, **kwargs)
+
+    @torch.no_grad()
+    def predict(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+        return self.forward(x, *args, **kwargs).argmax(dim=-1)

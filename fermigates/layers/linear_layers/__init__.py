@@ -1,6 +1,3 @@
 from .fermilayer import FermiGatedLinear
 
-all = [
-    "FermiGatedLinear"
-]
-
+__all__ = ["FermiGatedLinear"]
