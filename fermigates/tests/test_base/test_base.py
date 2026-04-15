@@ -1,6 +1,5 @@
 import math
 import torch
-import pytest
 from torch.utils.data import DataLoader, TensorDataset
 
 from fermigates.layers.linear_layers.fermilayer import FermiGatedLinear
