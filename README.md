@@ -139,4 +139,5 @@ GitHub Actions workflow is included at `.github/workflows/ci.yml` and runs:
 
 ## License
 
-MIT
+Copyright (c) 2026 Raunak Dev. All rights reserved.
+
