@@ -8,7 +8,10 @@ import torch.nn as nn
 
 
 class BaseGate(nn.Module, ABC):
-    """Base interface for differentiable gates used by Fermi layers.
+    """
+    TO BE DEPRECIATED - use BaseGate in _base.py instead.
+    
+    Base interface for differentiable gates used by Fermi layers.
 
     A gate maps either a reference tensor (typically a weight tensor) or an
     internal score tensor to probabilities in ``[0, 1]``.
