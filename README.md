@@ -47,7 +47,8 @@ print(kept, total, frac)
 - `BaseFermiClassifier`: reusable classifier base
 
 ### Gates
-- `FermiGate`
+- `BaseGate`: Base class for all gates
+- `FermiGate`: Fermi-Dirac inspired probabalistic gate 
 - `BinaryConcreteGate`
 - `HardConcreteGate`
 - `MagnitudeGate`

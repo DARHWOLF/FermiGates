@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 
 from fermigates.base import BaseFermiModel
-from fermigates.layers.calibration.linear_calibration import LinearCalibration
+from fermigates.calibration.linear_calibration import LinearCalibration
 
 
 def _make_synthetic_linear_pair(

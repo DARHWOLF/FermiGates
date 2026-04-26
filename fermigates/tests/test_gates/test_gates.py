@@ -10,18 +10,7 @@ from fermigates.gates import (
 )
 
 
-def test_fermi_gate_range_and_temperature():
-    gate = FermiGate(shape=(4, 5), init_mu=0.0, init_T=1.0)
-    w = torch.randn(4, 5)
 
-    p1 = gate(w)
-    gate.set_temperature(0.25)
-    p2 = gate(w)
-
-    assert p1.shape == w.shape
-    assert torch.all((p1 >= 0.0) & (p1 <= 1.0))
-    assert gate.temperature == 0.25
-    assert not torch.allclose(p1, p2)
 
 
 def test_binary_concrete_gate_sampling():

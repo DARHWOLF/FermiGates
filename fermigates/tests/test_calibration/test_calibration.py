@@ -2,7 +2,7 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 
 from fermigates.base import BaseFermiModel
-from fermigates.layers.calibration import LinearCalibration
+from fermigates.calibration import LinearCalibration
 
 
 def test_ridge_solver_recovers_linear_residual_without_bias():

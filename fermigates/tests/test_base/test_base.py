@@ -4,7 +4,7 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from fermigates.layers.linear_layers.fermilayer import FermiGatedLinear
 from fermigates.base import BaseFermiModel
-from fermigates.layers.calibration.linear_calibration import LinearCalibration
+from fermigates.calibration.linear_calibration import LinearCalibration
 
 
 class DummyBaseModel(BaseFermiModel):

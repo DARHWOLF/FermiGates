@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from typing import Callable, Tuple
+from collections.abc import Callable
 
 import torch
 import torch.nn as nn
 
-from fermigates.layers.linear_layers import FermiGatedLinear
+from fermigates.layers.linear import Linear
 
 
 def _resolve_activation(name: str) -> Callable[[torch.Tensor], torch.Tensor]:
@@ -35,12 +35,16 @@ class FermiMLPBlock(nn.Module):
         init_T: float = 1.0,
     ) -> None:
         super().__init__()
-        self.fc1 = FermiGatedLinear(d_in, d_hidden, init_mu=init_mu, init_T=init_T)
-        self.fc2 = FermiGatedLinear(d_hidden, d_out, init_mu=init_mu, init_T=init_T)
+        del init_mu
+        del init_T
+
+        # Step 1: Build stacked linear layers without implicit gates
+        self.fc1 = Linear(d_in, d_hidden)
+        self.fc2 = Linear(d_hidden, d_out)
         self.activation = _resolve_activation(activation)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, dict[str, torch.Tensor]]:
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         x, p1 = self.fc1(x)
         x = self.activation(x)
         x = self.dropout(x)
@@ -73,6 +77,6 @@ class FermiResidualBlock(nn.Module):
             init_T=init_T,
         )
 
-    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, dict[str, torch.Tensor]]:
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         y, masks = self.block(self.norm(x))
         return x + y, masks

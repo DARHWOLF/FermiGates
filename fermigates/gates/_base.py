@@ -7,7 +7,7 @@ class BaseGate(nn.Module):
     """
     Abstract base class for all gating mechanisms in FermiGates.
 
-    Gates are modules that map an input tensor (such as weights, activations, or scores)
+    Gates are dynamically self-adjusting modules that map an input tensor (such as weights, activations, or scores)
     to a continuous gating tensor, typically with values in [0, 1].
 
     This class provides a unified interface for:
@@ -23,8 +23,7 @@ class BaseGate(nn.Module):
     Usage Example
     -------------
     >>> gate = SomeGateSubclass(...)
-    >>> output = gate(x)  # Forward pass
-    >>> gate.annealing_step(global_step)  # Update annealed parameters during training
+    TO:DO
 
     Notes
     -----

@@ -11,7 +11,7 @@ from fermigates.gates import BaseGate
 
 if TYPE_CHECKING:
     from fermigates.export.pruning import ModelPruningReport
-    from fermigates.layers.calibration.linear_calibration import LinearCalibration
+    from fermigates.calibration.linear_calibration import LinearCalibration
     from fermigates.metrics.tracking import ModelOccupancyMetrics
 
 
@@ -157,7 +157,7 @@ class BaseFermiModel(nn.Module):
         name: Optional[str] = None,
         device: Optional[torch.device] = None,
     ) -> "LinearCalibration":
-        from fermigates.layers.calibration.linear_calibration import LinearCalibration
+        from fermigates.calibration.linear_calibration import LinearCalibration
 
         device = device or self._model_device()
         X_list = []
