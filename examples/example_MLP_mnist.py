@@ -43,8 +43,8 @@ def build_model(use_gate: bool) -> MLP:
         gate = lambda: FermiGate(
             mode="neuron",
             annealer="linear",
-            init_mu=-2.0,
-            init_temperature=2.0,
+            init_mu=0.0,
+            init_temperature=0.0,
         )
 
     # Step 2: Build and return model.
@@ -121,7 +121,7 @@ def main() -> None:
     gated_exp = Experiment(
         model=gated_model,
         dataset="mnist",
-        epochs=8,
+        epochs=3,
         learning_rate=1e-3,
     )
 
