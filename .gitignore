@@ -91,5 +91,8 @@ dmypy.json
 .temp.*
 temp.*
 
+#data
+data/
+
 # AI Agents 
 .codex

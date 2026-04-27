@@ -31,7 +31,11 @@ class Experiment:
     device : str or torch.device or None, optional
         Compute device. If ``None``, auto-selects CUDA when available.
     data_dir : str or Path, default="./data"
+<<<<<<< HEAD
         Local data directory for MNIST checks.
+=======
+        Dataset root directory passed to registered dataset loaders.
+>>>>>>> 4c7778d (adds mnist from torch vision)
     """
 
     def __init__(
@@ -167,12 +171,17 @@ class Experiment:
         return train_loader, test_loader
 
     def _build_loaders(self) -> tuple[DataLoader, DataLoader]:
+<<<<<<< HEAD
         """Resolve dataloaders from configured dataset name."""
+=======
+        """Resolve dataloaders from the configured dataset name.
+>>>>>>> 4c7778d (adds mnist from torch vision)
 
         # Step 1: return existing loaders when already built
         if self._train_loader is not None and self._test_loader is not None:
             return self._train_loader, self._test_loader
 
+<<<<<<< HEAD
         # Step 2: use MNIST when torchvision + local files are available
         if self.dataset == "mnist":
             has_torchvision = importlib.util.find_spec("torchvision") is not None
@@ -203,6 +212,27 @@ class Experiment:
                     test_set, batch_size=self.batch_size, shuffle=False
                 )
                 return self._train_loader, self._test_loader
+=======
+        # Step 2: Build strict train split loader from dataset registry.
+        self._train_loader = get_dataloader(
+            name=self.dataset,
+            split="train",
+            batch_size=self.batch_size,
+            shuffle=True,
+            data_dir=self.data_dir,
+            download=True,
+        )
+
+        # Step 3: Build strict test split loader from dataset registry.
+        self._test_loader = get_dataloader(
+            name=self.dataset,
+            split="test",
+            batch_size=self.batch_size,
+            shuffle=False,
+            data_dir=self.data_dir,
+            download=True,
+        )
+>>>>>>> 4c7778d (adds mnist from torch vision)
 
             self._dataset_used = "synthetic-mnist"
             self._train_loader, self._test_loader = self._synthetic_mnist_loaders()
