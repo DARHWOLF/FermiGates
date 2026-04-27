@@ -4,7 +4,6 @@ from pathlib import Path
 
 from torch.utils.data import DataLoader
 
-from fermigates.datasets._base import BaseDataset
 from fermigates.datasets.mnist import MNISTDataset
 
 _DATASETS = {
