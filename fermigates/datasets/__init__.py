@@ -4,9 +4,13 @@ from pathlib import Path
 
 from torch.utils.data import DataLoader
 
+from fermigates.datasets.cifar10_tokens import CIFAR10TokenDataset
+from fermigates.datasets.fashion_mnist import FashionMNISTDataset
 from fermigates.datasets.mnist import MNISTDataset
 
 _DATASETS = {
+    "cifar10_tokens": CIFAR10TokenDataset,
+    "fashion_mnist": FashionMNISTDataset,
     "mnist": MNISTDataset,
 }
 
@@ -98,4 +102,10 @@ def get_dataloader(
     return DataLoader(dataset, batch_size=int(batch_size), shuffle=shuffle)
 
 
-__all__ = ["BaseDataset", "MNISTDataset", "get_dataset", "get_dataloader"]
+__all__ = [
+    "CIFAR10TokenDataset",
+    "FashionMNISTDataset",
+    "MNISTDataset",
+    "get_dataset",
+    "get_dataloader",
+]

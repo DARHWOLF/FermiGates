@@ -118,6 +118,7 @@ class FermiTransformerClassifier(BaseFermiClassifier):
         tokens: torch.Tensor,
         attention_mask: torch.Tensor | None = None,
         return_masks: bool = False,
+        return_gate_outputs: bool = False,
     ):
         if tokens.ndim != 2:
             raise ValueError("tokens must have shape (batch, seq_len).")
@@ -143,7 +144,19 @@ class FermiTransformerClassifier(BaseFermiClassifier):
         # Step 3: pool sequence and compute classifier logits
         pooled = x.mean(dim=1)
         logits, head_mask = self.head(pooled)
+        calibration_module = getattr(self, "calibration", None)
+        if calibration_module is not None:
+            logits = calibration_module(logits)
 
+        # Step 4: optionally return normalized gate outputs for experiment metrics
+        gate_outputs: list[torch.Tensor | None] = []
+        for layer_masks in encoder_masks:
+            gate_outputs.append(layer_masks.get("ffn1"))
+            gate_outputs.append(layer_masks.get("ffn2"))
+        gate_outputs.append(head_mask)
+
+        if return_gate_outputs:
+            return logits, gate_outputs
         if return_masks:
             return logits, {"encoder": encoder_masks, "head": head_mask}
         return logits

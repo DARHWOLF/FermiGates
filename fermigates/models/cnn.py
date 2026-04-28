@@ -116,9 +116,33 @@ class FermiConvClassifier(BaseFermiClassifier):
             return None
         return gate_factory(shape)
 
-    def logits(self, x: torch.Tensor, return_masks: bool = False):
-        masks: dict[str, torch.Tensor] = {}
+    def logits(
+        self,
+        x: torch.Tensor,
+        return_masks: bool = False,
+        return_gate_outputs: bool = False,
+    ):
+        """Compute CNN logits with optional gate-output and mask payloads.
 
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input image batch of shape ``(batch, channels, height, width)``.
+        return_masks : bool, default=False
+            Whether to return named gate masks as a dictionary payload.
+        return_gate_outputs : bool, default=False
+            Whether to return gate masks as a list payload compatible with the
+            ``Experiment.activation_sparsity_metrics`` API.
+
+        Returns
+        -------
+        torch.Tensor or tuple[torch.Tensor, dict[str, torch.Tensor | None]] or tuple[torch.Tensor, list[torch.Tensor | None]]
+            Final logits or logits with optional gate metadata.
+        """
+        # Step 1: Build mask container for per-layer gate outputs.
+        masks: dict[str, torch.Tensor | None] = {}
+
+        # Step 2: Run gated convolution stages.
         x, p = self.conv1(x)
         masks["conv1"] = p
         x = self.pool(torch.relu(self.norm1(x)))
@@ -131,12 +155,27 @@ class FermiConvClassifier(BaseFermiClassifier):
         masks["conv3"] = p
         x = torch.relu(self.norm3(x))
 
+        # Step 3: Pool and run gated classifier head.
         x = torch.nn.functional.adaptive_avg_pool2d(x, output_size=(1, 1)).flatten(1)
         x = self.dropout(x)
 
         logits, p = self.classifier(x)
         masks["classifier"] = p
 
+        # Step 4: Apply optional calibration to final logits.
+        calibration_module = getattr(self, "calibration", None)
+        if calibration_module is not None:
+            logits = calibration_module(logits)
+
+        # Step 5: Return logits with requested payload format.
+        if return_gate_outputs:
+            gate_outputs = [
+                masks.get("conv1"),
+                masks.get("conv2"),
+                masks.get("conv3"),
+                masks.get("classifier"),
+            ]
+            return logits, gate_outputs
         if return_masks:
             return logits, masks
         return logits
