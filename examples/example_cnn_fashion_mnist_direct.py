@@ -49,13 +49,13 @@ gated_model = CNN(
 vanilla_exp = Experiment(
     model=vanilla_model,
     dataset="fashion_mnist",
-    epochs=2,
+    epochs=1,
     learning_rate=1e-3,
 )
 gated_exp = Experiment(
     model=gated_model,
     dataset="fashion_mnist",
-    epochs=2,
+    epochs=1,
     learning_rate=1e-3,
 )
 
