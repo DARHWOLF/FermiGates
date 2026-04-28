@@ -7,8 +7,8 @@ MNIST is loaded through torchvision and downloaded to `./data` when missing.
 # Step 0: Imports
 from __future__ import annotations
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 import torch
 
@@ -16,7 +16,6 @@ if __package__ is None:
     sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from fermigates.calibration.linear_calibration import LinearCalibration
-from fermigates.datasets import get_dataloader
 from fermigates.experiments import Experiment
 from fermigates.gates import FermiGate
 from fermigates.losses import fermiloss
@@ -40,12 +39,13 @@ def build_model(use_gate: bool) -> MLP:
     # Step 1: Resolve optional gate factory.
     gate = None
     if use_gate:
-        gate = lambda: FermiGate(
-            mode="neuron",
-            annealer="linear",
-            init_mu=0.0,
-            init_temperature=0.0,
-        )
+        def gate() -> FermiGate:
+            return FermiGate(
+                mode="neuron",
+                annealer="linear",
+                init_mu=0.0,
+                init_temperature=0.0,
+            )
 
     # Step 2: Build and return model.
     return MLP(
@@ -54,52 +54,8 @@ def build_model(use_gate: bool) -> MLP:
         output_dim=10,
         gate=gate,
         loss=fermiloss,
-        calibration=LinearCalibration(),
+        calibration=LinearCalibration(d_in=10, d_out=10, learnable=False),
     )
-
-
-def activation_gate_sparsity(model: MLP, device: torch.device) -> float:
-    """Estimate activation-gate sparsity on MNIST test split.
-
-    Parameters
-    ----------
-    model : MLP
-        Trained MLP model.
-    device : torch.device
-        Device used for forward passes.
-
-    Returns
-    -------
-    float
-        Overall sparsity value in ``[0.0, 1.0]``.
-    """
-
-    # Step 1: Build test loader and initialize counters.
-    test_loader = get_dataloader(
-        name="mnist",
-        split="test",
-        batch_size=256,
-        shuffle=False,
-    )
-    active = 0
-    total = 0
-
-    # Step 2: Collect gate activations from real batches.
-    model.eval()
-    with torch.no_grad():
-        for x_batch, _ in test_loader:
-            x_batch = x_batch.to(device)
-            _logits, gate_outputs = model(x_batch, return_gate_outputs=True)
-            for gate_probs in gate_outputs:
-                if gate_probs is None:
-                    continue
-                active += int((gate_probs > 0.5).sum().item())
-                total += int(gate_probs.numel())
-
-    # Step 3: Convert active fraction to sparsity.
-    if total == 0:
-        return 0.0
-    return 1.0 - (float(active) / float(total))
 
 
 def main() -> None:
@@ -129,7 +85,7 @@ def main() -> None:
     print("\n===== Training Vanilla MLP =====")
     vanilla_exp.train()
     print("\n===== Training Gated MLP =====")
-    gated_exp.train()
+    gated_exp.train(calibrate_after_first_epoch=True, ridge_lambda=1e-3)
 
     # Step 4: Evaluate and print accuracy.
     vanilla_acc = vanilla_exp.accuracy()
@@ -138,25 +94,22 @@ def main() -> None:
     print(f"\nVanilla Accuracy: {vanilla_acc:.4f}")
     print(f"Gated Accuracy:   {gated_acc:.4f}")
 
-    # Step 5: Report gate sparsity metrics.
-    vanilla_weight_sparsity = 0.0
-    gated_weight_sparsity = 0.0
-    if hasattr(vanilla_model, "compute_sparsity"):
-        kept, total, _ = vanilla_model.compute_sparsity(threshold=0.5)
-        if total > 0:
-            vanilla_weight_sparsity = 1.0 - (float(kept) / float(total))
-    if hasattr(gated_model, "compute_sparsity"):
-        kept, total, _ = gated_model.compute_sparsity(threshold=0.5)
-        if total > 0:
-            gated_weight_sparsity = 1.0 - (float(kept) / float(total))
+    # Step 5: Report sparsity metrics from Experiment APIs.
+    vanilla_weight_sparsity = vanilla_exp.weight_sparsity_metrics(threshold=0.5)
+    gated_weight_sparsity = gated_exp.weight_sparsity_metrics(threshold=0.5)
+    vanilla_activation_sparsity = vanilla_exp.activation_sparsity_metrics(
+        split="test",
+        threshold=0.5,
+    )
+    gated_activation_sparsity = gated_exp.activation_sparsity_metrics(
+        split="test",
+        threshold=0.5,
+    )
 
-    vanilla_activation_sparsity = activation_gate_sparsity(vanilla_model, vanilla_exp.device)
-    gated_activation_sparsity = activation_gate_sparsity(gated_model, gated_exp.device)
-
-    print(f"\nVanilla Weight-Gate Sparsity: {vanilla_weight_sparsity:.4f}")
-    print(f"Gated   Weight-Gate Sparsity: {gated_weight_sparsity:.4f}")
-    print(f"Vanilla Activation-Gate Sparsity: {vanilla_activation_sparsity:.4f}")
-    print(f"Gated   Activation-Gate Sparsity: {gated_activation_sparsity:.4f}")
+    print(f"\nVanilla Weight-Gate Sparsity: {vanilla_weight_sparsity}")
+    print(f"Gated   Weight-Gate Sparsity: {gated_weight_sparsity}")
+    print(f"Vanilla Activation-Gate Sparsity: {vanilla_activation_sparsity}")
+    print(f"Gated   Activation-Gate Sparsity: {gated_activation_sparsity}")
 
 
 if __name__ == "__main__":
