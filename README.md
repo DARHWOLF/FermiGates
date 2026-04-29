@@ -93,6 +93,34 @@ For full API details, see [docs/api.md](docs/api.md).
 - [API Reference](docs/api.md)
 - [Development Guide](docs/development.md)
 
+## Repository Structure
+
+```text
+FermiGates/
+├── fermigates/               # Library source code
+│   ├── base/
+│   ├── calibration/
+│   ├── datasets/
+│   ├── experiments/
+│   ├── export/
+│   ├── gates/
+│   ├── layers/
+│   ├── losses/
+│   ├── masks/
+│   ├── metrics/
+│   ├── models/
+│   ├── training/
+│   └── tests/                # Test suite
+├── examples/                 # Example scripts and notebooks
+├── docs/                     # Project documentation
+├── data/                     # Local dataset artifacts
+├── logo/                     # Branding assets
+├── .github/workflows/        # CI configuration
+├── pyproject.toml            # Build system and dependencies
+├── mkdocs.yml                # Documentation site config
+└── README.md
+```
+
 ## Quality Signals
 
 - Automated tests with `pytest`
