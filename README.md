@@ -1,19 +1,17 @@
 # FermiGates
-
-<p align="left">
+<div>
   <a href="https://www.github.com/DARHWOLF/FermiGates">
-    <img src="logo/logo_blue.png" width="190" alt="FermiGates logo" />
+    <img src="logo/logo_blue.png" width="190" alt="FermiGates logo", align="left" />
   </a>
-</p>
 
-**FermiGates** is a PyTorch toolkit for differentiable sparsity with Fermi-inspired gating, practical training workflows, and export-ready pruning utilities.
-
-## Why FermiGates
+**FermiGates** is a PyTorch toolkit for differentiable sparsity with Fermi-inspired gating, practical training workflows, and export-ready pruning utilities. FermiGates feature:
+</div>
 
 - Differentiable gating with `FermiGate` for controllable sparsity during training.
 - Ready-to-run classifier models for MLP, CNN, and Transformer use cases.
 - Built-in sparsity tracking and occupancy metrics for gate behavior inspection.
 - Post-pruning calibration and export helpers for deployment-oriented workflows.
+
 
 ## Installation
 
