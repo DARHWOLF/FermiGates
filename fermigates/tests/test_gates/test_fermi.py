@@ -153,3 +153,14 @@ def test_fermi_gate_range_and_temperature():
     assert torch.all((p1 >= 0.0) & (p1 <= 1.0))
     assert gate.temperature == 0.25
     assert not torch.allclose(p1, p2)
+
+
+def test_weight_mode_matches_elementwise_shape_behavior():
+    gate = FermiGate(shape=(3, 4), mode="weight", init_mu=0.0, init_temperature=1.0, annealer=None)
+    x = torch.randn(3, 4)
+
+    out = gate(x)
+
+    assert out.shape == x.shape
+    assert gate.mu.shape == x.shape
+    assert torch.all((out >= 0.0) & (out <= 1.0))

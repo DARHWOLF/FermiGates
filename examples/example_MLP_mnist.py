@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Literal
 
 import torch
 
@@ -22,13 +23,13 @@ from fermigates.losses import fermiloss
 from fermigates.models import MLP
 
 
-def build_model(use_gate: bool) -> MLP:
+def build_model(variant: Literal["vanilla", "neuron", "weight"]) -> MLP:
     """Build an MNIST MLP model.
 
     Parameters
     ----------
-    use_gate : bool
-        Whether to attach Fermi neuron gates.
+    variant : {"vanilla", "neuron", "weight"}
+        Model variant that controls gate placement.
 
     Returns
     -------
@@ -36,12 +37,23 @@ def build_model(use_gate: bool) -> MLP:
         Configured model instance.
     """
 
-    # Step 1: Resolve optional gate factory.
+    # Step 1: Validate and resolve optional gate factory.
+    if variant not in {"vanilla", "neuron", "weight"}:
+        raise ValueError("variant must be one of {'vanilla', 'neuron', 'weight'}.")
+
     gate = None
-    if use_gate:
+    if variant == "neuron":
         def gate() -> FermiGate:
             return FermiGate(
                 mode="neuron",
+                annealer="linear",
+                init_mu=0.0,
+                init_temperature=0.0,
+            )
+    if variant == "weight":
+        def gate() -> FermiGate:
+            return FermiGate(
+                mode="weight",
                 annealer="linear",
                 init_mu=0.0,
                 init_temperature=0.0,
@@ -59,57 +71,109 @@ def build_model(use_gate: bool) -> MLP:
 
 
 def main() -> None:
-    """Run vanilla vs gated MLP training on MNIST."""
+    """Run vanilla, neuron-gated, and weight-gated MLP training on MNIST."""
 
-    # Step 1: Fix seed and build models.
-    torch.manual_seed(7)
-    vanilla_model = build_model(use_gate=False)
-    torch.manual_seed(7)
-    gated_model = build_model(use_gate=True)
+    # Step 1: Define model variants and build deterministic model instances.
+    model_variants: list[tuple[str, Literal["vanilla", "neuron", "weight"]]] = [
+        ("Vanilla", "vanilla"),
+        ("Neuron-Gated", "neuron"),
+        ("Weight-Gated", "weight"),
+    ]
+    models: dict[str, MLP] = {}
+    for label, variant in model_variants:
+        torch.manual_seed(7)
+        models[label] = build_model(variant=variant)
 
-    # Step 2: Create experiments.
-    vanilla_exp = Experiment(
-        model=vanilla_model,
-        dataset="mnist",
-        epochs=3,
-        learning_rate=1e-3,
-    )
-    gated_exp = Experiment(
-        model=gated_model,
-        dataset="mnist",
-        epochs=3,
-        learning_rate=1e-3,
-    )
+    # Step 2: Build experiments with shared training configuration.
+    experiments: dict[str, Experiment] = {}
+    for label, _ in model_variants:
+        experiments[label] = Experiment(
+            model=models[label],
+            dataset="mnist",
+            epochs=3,
+            learning_rate=1e-3,
+        )
 
-    # Step 3: Train models.
+    # Step 3: Train all models sequentially with explicit calibration policy.
     print("\n===== Training Vanilla MLP =====")
-    vanilla_exp.train()
-    print("\n===== Training Gated MLP =====")
-    gated_exp.train(calibrate_after_first_epoch=True, ridge_lambda=1e-3)
+    experiments["Vanilla"].train()
+    print("\n===== Training Neuron-Gated MLP =====")
+    experiments["Neuron-Gated"].train(calibrate_after_first_epoch=True, ridge_lambda=1e-3)
+    print("\n===== Training Weight-Gated MLP =====")
+    experiments["Weight-Gated"].train(calibrate_after_first_epoch=True, ridge_lambda=1e-3)
 
-    # Step 4: Evaluate and print accuracy.
-    vanilla_acc = vanilla_exp.accuracy()
-    gated_acc = gated_exp.accuracy()
+    # Step 4: Evaluate and print accuracy for each model.
+    accuracies: dict[str, float] = {}
+    for label, _ in model_variants:
+        accuracies[label] = experiments[label].accuracy()
     print("\n===== Evaluation =====")
-    print(f"\nVanilla Accuracy: {vanilla_acc:.4f}")
-    print(f"Gated Accuracy:   {gated_acc:.4f}")
+    print(f"\nVanilla Accuracy:       {accuracies['Vanilla']:.4f}")
+    print(f"Neuron-Gated Accuracy:  {accuracies['Neuron-Gated']:.4f}")
+    print(f"Weight-Gated Accuracy:  {accuracies['Weight-Gated']:.4f}")
 
-    # Step 5: Report sparsity metrics from Experiment APIs.
-    vanilla_weight_sparsity = vanilla_exp.weight_sparsity_metrics(threshold=0.5)
-    gated_weight_sparsity = gated_exp.weight_sparsity_metrics(threshold=0.5)
-    vanilla_activation_sparsity = vanilla_exp.activation_sparsity_metrics(
-        split="test",
-        threshold=0.5,
-    )
-    gated_activation_sparsity = gated_exp.activation_sparsity_metrics(
-        split="test",
-        threshold=0.5,
-    )
+    # Step 5: Collect weight and activation sparsity metrics from Experiment APIs.
+    weight_sparsity: dict[str, dict[str, float | int] | None] = {}
+    activation_sparsity: dict[str, dict[str, float | int | str] | None] = {}
+    for label, _ in model_variants:
+        weight_sparsity[label] = experiments[label].weight_sparsity_metrics(threshold=0.5)
+        activation_sparsity[label] = experiments[label].activation_sparsity_metrics(
+            split="test",
+            threshold=0.5,
+        )
 
-    print(f"\nVanilla Weight-Gate Sparsity: {vanilla_weight_sparsity}")
-    print(f"Gated   Weight-Gate Sparsity: {gated_weight_sparsity}")
-    print(f"Vanilla Activation-Gate Sparsity: {vanilla_activation_sparsity}")
-    print(f"Gated   Activation-Gate Sparsity: {gated_activation_sparsity}")
+    # Step 6: Normalize sparse-fraction values used for final comparable summaries.
+    weight_fraction_sparse: dict[str, float] = {}
+    activation_fraction_sparse: dict[str, float] = {}
+    for label, _ in model_variants:
+        weight_fraction_sparse[label] = 0.0
+        if weight_sparsity[label] is not None:
+            weight_fraction_sparse[label] = float(weight_sparsity[label]["fraction_sparse"])
+        activation_fraction_sparse[label] = weight_fraction_sparse[label]
+        if activation_sparsity[label] is not None:
+            activation_fraction_sparse[label] = float(activation_sparsity[label]["fraction_sparse"])
+
+    # Step 7: Build normalized activation display strings for readability.
+    activation_display: dict[str, str] = {}
+    for label, _ in model_variants:
+        activation_display[label] = "N/A (no activation gates)"
+        if activation_sparsity[label] is not None:
+            activation_display[label] = str(activation_sparsity[label])
+
+    # Step 8: Print explicit sparsity interpretation for neuron and weight gating modes.
+    print("\n===== Sparsity Report =====")
+    print(
+        "For mode='neuron' output gating, activation-gate sparsity is the primary "
+        "signal and weight-gate sparsity is not expected to drop."
+    )
+    print(
+        "For mode='weight' gating, weight-gate sparsity is the primary structural "
+        "signal."
+    )
+    print(f"\nVanilla Weight-Gate Sparsity: {weight_sparsity['Vanilla']}")
+    print(f"Neuron-Gated Weight-Gate Sparsity: {weight_sparsity['Neuron-Gated']}")
+    print(f"Weight-Gated Weight-Gate Sparsity: {weight_sparsity['Weight-Gated']}")
+    print(f"Vanilla Activation-Gate Sparsity: {activation_display['Vanilla']}")
+    print(f"Neuron-Gated Activation-Gate Sparsity: {activation_display['Neuron-Gated']}")
+    print(f"Weight-Gated Activation-Gate Sparsity: {activation_display['Weight-Gated']}")
+
+    # Step 9: Print final comparable sparsity lines with per-model expected signal.
+    vanilla_final = weight_fraction_sparse["Vanilla"]
+    neuron_final = activation_fraction_sparse["Neuron-Gated"]
+    weight_final = weight_fraction_sparse["Weight-Gated"]
+    if weight_sparsity["Weight-Gated"] is None:
+        weight_final = activation_fraction_sparse["Weight-Gated"]
+    print(
+        f"\nVanilla Final Comparable Sparsity: {vanilla_final:.4f} "
+        "(from weight-gate sparsity)"
+    )
+    print(
+        f"Neuron-Gated Final Comparable Sparsity: {neuron_final:.4f} "
+        "(activation-gate preferred; weight-gate fallback)"
+    )
+    print(
+        f"Weight-Gated Final Comparable Sparsity: {weight_final:.4f} "
+        "(weight-gate preferred; activation-gate fallback)"
+    )
 
 
 if __name__ == "__main__":

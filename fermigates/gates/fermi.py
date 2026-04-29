@@ -15,7 +15,7 @@ class FermiGate(BaseGate):
     shape : tuple[int, ...] or None, optional
         Reference tensor shape used to initialize gate parameters. If ``None``,
         parameters are initialized lazily from the first forward input.
-    mode : {"elementwise", "neuron", "head", "channel", "block", "lowrank"}, default="elementwise"
+    mode : {"elementwise", "weight", "neuron", "head", "channel", "block", "lowrank"}, default="elementwise"
         Granularity of the learnable ``mu`` parameters.
     rank : int or None, optional
         Rank used only when ``mode="lowrank"``.
@@ -66,7 +66,7 @@ class FermiGate(BaseGate):
             raise ValueError("shape must contain at least one dimension.")
 
         # Step 2: create mode-specific parameters
-        if self.mode == "elementwise":
+        if self.mode in {"elementwise", "weight"}:
             self.mu = nn.Parameter(torch.full(resolved_shape, self._init_mu))
         elif self.mode == "neuron":
             self.mu = nn.Parameter(torch.full((resolved_shape[-1],), self._init_mu))
@@ -112,7 +112,7 @@ class FermiGate(BaseGate):
         self._maybe_initialize_from_input(x)
 
         # Step 1: elementwise
-        if self.mode == "elementwise":
+        if self.mode in {"elementwise", "weight"}:
             return self.mu
 
         # Step 2: neuron (last dim)
@@ -221,7 +221,7 @@ class FermiGate(BaseGate):
 
         self._maybe_initialize_from_input(reference)
 
-        if self.mode == "elementwise":
+        if self.mode in {"elementwise", "weight"}:
             val = torch.quantile(reference, percentile)
             self.mu.copy_(torch.full_like(reference, val))
 
