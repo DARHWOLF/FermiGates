@@ -6,22 +6,6 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 
 
-def test_train_mlp_fermi_objective_demo_runs():
-    path = Path(__file__).resolve().parents[3] / "examples" / "train_mlp_fermi_objective.py"
-    spec = spec_from_file_location("train_mlp_fermi_objective", path)
-    assert spec is not None and spec.loader is not None
-    module = module_from_spec(spec)
-    spec.loader.exec_module(module)
-
-    run_demo = module.run_demo
-    _model, tracker, report = run_demo(epochs=2, batch_size=128, seed=11)
-
-    assert len(tracker.records) >= 2
-    assert report.total_weights > 0
-    assert 0.0 <= report.fraction_kept <= 1.0
-    assert 0.0 <= report.saved_macs_fraction <= 1.0
-
-
 def _patched_token_get_dataloader(
     name: str,
     split: str,
@@ -107,3 +91,44 @@ def test_example_cnn_fashion_mnist_direct_runs(monkeypatch: pytest.MonkeyPatch) 
     assert spec is not None and spec.loader is not None
     module = module_from_spec(spec)
     spec.loader.exec_module(module)
+
+
+def test_example_mlp_mnist_sparsity_reporting(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Validate MNIST MLP example prints explicit gated sparsity semantics."""
+
+    # Step 1: Patch dataset loading path used by Experiment.
+    monkeypatch.setattr(
+        "fermigates.experiments.experiment.get_dataloader",
+        _patched_image_get_dataloader,
+    )
+
+    # Step 2: Import example module from file path.
+    path = Path(__file__).resolve().parents[3] / "examples" / "example_MLP_mnist.py"
+    spec = spec_from_file_location("example_MLP_mnist", path)
+    assert spec is not None and spec.loader is not None
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    # Step 3: Execute main function and capture stdout.
+    module.main()
+    captured = capsys.readouterr().out
+
+    # Step 4: Validate explicit sparsity-report sections and normalized output.
+    assert "===== Training Neuron-Gated MLP =====" in captured
+    assert "===== Training Weight-Gated MLP =====" in captured
+    assert "Neuron-Gated Accuracy:" in captured
+    assert "Weight-Gated Accuracy:" in captured
+    assert "===== Sparsity Report =====" in captured
+    assert "For mode='neuron' output gating" in captured
+    assert "For mode='weight' gating" in captured
+    assert "Vanilla Activation-Gate Sparsity: N/A (no activation gates)" in captured
+    assert "Neuron-Gated Weight-Gate Sparsity:" in captured
+    assert "Weight-Gated Weight-Gate Sparsity:" in captured
+    assert "Neuron-Gated Activation-Gate Sparsity:" in captured
+    assert "Weight-Gated Activation-Gate Sparsity:" in captured
+    assert "Vanilla Final Comparable Sparsity:" in captured
+    assert "Neuron-Gated Final Comparable Sparsity:" in captured
+    assert "Weight-Gated Final Comparable Sparsity:" in captured
