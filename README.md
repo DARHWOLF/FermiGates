@@ -1,22 +1,33 @@
 # FermiGates
 
-A complete PyTorch toolkit for differentiable pruning with Fermi-inspired gates.
+<p align="left">
+  <a href="https://www.github.com/DARHWOLF/FermiGates">
+    <img src="logo/logo_blue.png" width="190" alt="FermiGates logo" />
+  </a>
+</p>
 
-FermiGates includes:
-- Multiple gate families (`Fermi`, `BinaryConcrete`, `HardConcrete`, `Magnitude`, `GroupLasso`, `Gompertz`)
-- Fermi-enabled layers (`Linear`, `Conv2d`, MLP/Residual blocks, Transformer encoder block)
-- Ready-to-use models (MLP, CNN, Transformer classifier)
-- Calibration utilities for post-pruning residual correction
-- Full tests, examples, and CI
+**FermiGates** is a PyTorch toolkit for differentiable sparsity with Fermi-inspired gating, practical training workflows, and export-ready pruning utilities.
+
+## Why FermiGates
+
+- Differentiable gating with `FermiGate` for controllable sparsity during training.
+- Ready-to-run classifier models for MLP, CNN, and Transformer use cases.
+- Built-in sparsity tracking and occupancy metrics for gate behavior inspection.
+- Post-pruning calibration and export helpers for deployment-oriented workflows.
 
 ## Installation
 
 ```bash
 pip install -e .
+```
+
+For development:
+
+```bash
 pip install -e .[dev]
 ```
 
-Or with `uv`:
+Using `uv`:
 
 ```bash
 uv sync
@@ -27,118 +38,76 @@ uv sync --all-extras
 
 ```python
 import torch
-from fermigates.models import FermiMLPClassifier
 
-model = FermiMLPClassifier(input_dim=32, hidden_dims=(64, 32), num_classes=4)
+from fermigates.gates import FermiGate
+from fermigates.models import MLP
+
+model = MLP(
+    input_dim=32,
+    hidden_dims=[64, 32],
+    output_dim=4,
+    gate=lambda: FermiGate(
+        mode="weight",
+        init_mu=-0.05,
+        init_temperature=1.0,
+    ),
+)
+
 x = torch.randn(16, 32)
 logits = model(x)
+kept, total, fraction_kept = model.compute_sparsity(threshold=0.5)
 
-model.set_temperature(0.5)
-kept, total, frac = model.compute_sparsity(threshold=0.5)
-print(kept, total, frac)
+print(logits.shape)         # torch.Size([16, 4])
+print(kept, total, fraction_kept)
 ```
 
-## Main API
+## Example Workflows
 
-### Base classes
-- `BaseFermiLayer`: abstract base for gated layers
-- `BaseFermiModel`: temperature, sparsity, and calibration utilities
-- `BaseFermiBackbone`: reusable feature backbone base
-- `BaseFermiClassifier`: reusable classifier base
-
-### Gates
-- `BaseGate`: Base class for all gates
-- `FermiGate`: Fermi-Dirac inspired probabalistic gate 
-- `BinaryConcreteGate`
-- `HardConcreteGate`
-- `MagnitudeGate`
-- `GroupLassoGate`
-- `GompertzGate`
-
-### Layers
-- `FermiGatedLinear`
-- `FermiGatedConv2d`
-- `FermiMLPBlock`
-- `FermiResidualBlock`
-- `FermiTransformerEncoderLayer`
-- `LinearCalibration`
-
-### Models
-- `FermiMLPClassifier`
-- `FermiConvClassifier`
-- `FermiTransformerClassifier`
-
-### Losses
-- `fermi_informed_loss`
-- `fermi_free_energy_loss`
-- `binary_entropy_loss`
-- `sparsity_l1_loss`
-- `budget_penalty_loss`
-- `consistency_loss`
-- `kl_to_bernoulli_prior_loss`
-- `group_sparsity_l21_loss`
-- `hoyer_sparsity_loss`
-
-### Training
-- `AnnealingSchedule`
-- `FermiAnnealingPlan`
-- `AdaptiveBudgetController`
-
-### Metrics
-- `collect_gate_metrics`
-- `free_energy_components`
-- `MetricsTracker`
-
-### Export
-- `to_hard_masked_model`
-- `hard_masked_state_dict`
-- `pruning_report`
-
-## Examples
-
-Runnable scripts:
-- `examples/train_mlp_synthetic.py`
-- `examples/train_conv_synthetic.py`
-- `examples/transformer_toy_forward.py`
-- `examples/train_mlp_fermi_objective.py`
-
-Run:
+Run the provided examples:
 
 ```bash
-python examples/train_mlp_synthetic.py
-python examples/train_conv_synthetic.py
-python examples/transformer_toy_forward.py
-python examples/train_mlp_fermi_objective.py
+python examples/example_MLP_mnist.py
+python examples/example_cnn_fashion_mnist_direct.py
+python examples/example_transformer_cifar10.py
 ```
 
-## Tests
+## Core Concepts
 
-```bash
-pytest
-```
+- **Weight gating** applies probabilities directly to layer weights; weight-gate sparsity is the primary structural signal.
+- **Activation gating** applies probabilities to layer inputs or outputs; activation sparsity is the primary runtime signal.
+- **Comparable sparsity** in experiments should follow the dominant gate location for the selected mode.
+- Gate behavior depends strongly on initialization, especially `init_mu` and a strictly positive `init_temperature`.
 
-## Lint & format
+## API Entry Points
 
-```bash
-ruff check .
-black .
-isort .
-```
+- `fermigates.gates.FermiGate`
+- `fermigates.models.MLP`, `fermigates.models.CNN`, `fermigates.models.Transformer`
+- `fermigates.experiments.Experiment`
+- `fermigates.losses` for Fermi-informed training terms
+- `fermigates.metrics` for occupancy and free-energy tracking
+- `fermigates.export` for hard-masked model export and pruning reports
+
+For full API details, see [docs/api.md](docs/api.md).
 
 ## Documentation
 
-See:
-- `docs/architecture.md`
-- `docs/api.md`
-- `docs/development.md`
+- [Architecture](docs/architecture.md)
+- [API Reference](docs/api.md)
+- [Development Guide](docs/development.md)
 
-## CI
+## Quality Signals
 
-GitHub Actions workflow is included at `.github/workflows/ci.yml` and runs:
-- Ruff
-- Pytest (Python 3.10, 3.11, 3.12)
+- Automated tests with `pytest`
+- Static analysis with `ruff`
+- GitHub Actions CI across Python 3.10, 3.11, and 3.12
+
+Run locally:
+
+```bash
+ruff check .
+pytest
+```
 
 ## License
 
 Copyright (c) 2026 Raunak Dev. All rights reserved.
-
