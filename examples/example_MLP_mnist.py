@@ -48,15 +48,15 @@ def build_model(variant: Literal["vanilla", "neuron", "weight"]) -> MLP:
                 mode="neuron",
                 annealer="linear",
                 init_mu=0.0,
-                init_temperature=0.0,
+                init_temperature=0.1,
             )
     if variant == "weight":
         def gate() -> FermiGate:
             return FermiGate(
                 mode="weight",
                 annealer="linear",
-                init_mu=0.0,
-                init_temperature=0.0,
+                init_mu=0.5,
+                init_temperature=1,
             )
 
     # Step 2: Build and return model.
@@ -90,7 +90,7 @@ def main() -> None:
         experiments[label] = Experiment(
             model=models[label],
             dataset="mnist",
-            epochs=3,
+            epochs=10,
             learning_rate=1e-3,
         )
 

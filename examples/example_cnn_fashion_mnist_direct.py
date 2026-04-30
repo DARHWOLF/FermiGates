@@ -38,8 +38,8 @@ gated_model = CNN(
     gate=lambda: FermiGate(
         mode="channel",
         annealer="linear",
-        init_mu=0.0,
-        init_temperature=0.0,
+        init_mu=0.5,
+        init_temperature=1,
     ),
     loss=fermiloss,
     calibration=LinearCalibration(d_in=10, d_out=10, learnable=False),
